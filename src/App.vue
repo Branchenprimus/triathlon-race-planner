@@ -1,11 +1,30 @@
 <template>
   <div id="app">
+    <nav class="app-nav" aria-label="Main navigation">
+      <button
+        type="button"
+        class="nav-button"
+        :class="{ active: activeView === 'pace' }"
+        @click="activeView = 'pace'"
+      >
+        Pace
+      </button>
+      <button
+        type="button"
+        class="nav-button"
+        :class="{ active: activeView === 'nutrition' }"
+        @click="activeView = 'nutrition'"
+      >
+        Nutrition
+      </button>
+    </nav>
+
     <header class="app-header">
       <h1>🏊‍♂️🚴‍♂️🏃‍♂️ Triathlon Race Planner</h1>
       <p class="subtitle">Plan your race splits with interactive time distribution</p>
     </header>
 
-    <main class="app-main">
+    <main v-if="activeView === 'pace'" class="app-main">
       <div class="controls-section">
         <div class="preset-selector">
           <label for="preset">Distance Preset:</label>
@@ -23,8 +42,9 @@
             id="targetTime"
             type="text"
             v-model="targetTimeInput"
+            @input="handleTargetTimeInput"
             @blur="updateTargetTime"
-            @keyup.enter="updateTargetTime"
+            @keyup.enter="blurInput"
             placeholder="HH:MM:SS"
             pattern="[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]"
           />
@@ -54,9 +74,11 @@
           :model-value="disciplines.swim"
           :max-value="targetTimeSeconds"
           :total-time="targetTimeSeconds"
-          :pace-info="swimPace"
+          :pace-value="swimPaceValue"
+          pace-unit="/100m"
           :is-locked="lockedDisciplines.swim"
           @update:model-value="(val) => updateDiscipline('swim', val)"
+          @update:pace-info="(val) => updatePaceValue('swim', val)"
           @toggle-lock="toggleLock"
         />
 
@@ -79,9 +101,11 @@
           :model-value="disciplines.bike"
           :max-value="targetTimeSeconds"
           :total-time="targetTimeSeconds"
-          :pace-info="bikeSpeed"
+          :pace-value="bikeSpeedValue"
+          pace-unit="km/h"
           :is-locked="lockedDisciplines.bike"
           @update:model-value="(val) => updateDiscipline('bike', val)"
+          @update:pace-info="(val) => updatePaceValue('bike', val)"
           @toggle-lock="toggleLock"
         />
 
@@ -104,9 +128,11 @@
           :model-value="disciplines.run"
           :max-value="targetTimeSeconds"
           :total-time="targetTimeSeconds"
-          :pace-info="runPace"
+          :pace-value="runPaceValue"
+          pace-unit="min/km"
           :is-locked="lockedDisciplines.run"
           @update:model-value="(val) => updateDiscipline('run', val)"
+          @update:pace-info="(val) => updatePaceValue('run', val)"
           @toggle-lock="toggleLock"
         />
       </div>
@@ -126,6 +152,161 @@
           <span>{{ isValidTotal ? 'Times match!' : 'Adjusting...' }}</span>
         </div>
       </div>
+    </main>
+
+    <main v-else class="app-main nutrition-main">
+      <section class="nutrition-grid">
+        <div class="nutrition-panel">
+          <h2>Nutrition</h2>
+
+          <div class="form-field">
+            <label for="raceType">Race type</label>
+            <select id="raceType" v-model="nutrition.raceType" @change="loadNutritionRaceDefaults">
+              <option v-for="race in nutritionRaceTypes" :key="race.value" :value="race.value">
+                {{ race.label }}
+              </option>
+            </select>
+          </div>
+
+          <div class="split-fields">
+            <div class="form-field">
+              <label for="swimTime">Swim</label>
+              <input
+                id="swimTime"
+                :value="nutritionTimeInputs.swim"
+                type="text"
+                placeholder="HH:MM:SS"
+                @focus="isEditingNutritionTime.swim = true"
+                @input="(event) => handleNutritionTimeInput('swim', event)"
+                @blur="() => finishNutritionTimeInput('swim')"
+                @keydown.enter="blurInput"
+              />
+            </div>
+            <div class="form-field">
+              <label for="bikeTime">Bike</label>
+              <input
+                id="bikeTime"
+                :value="nutritionTimeInputs.bike"
+                type="text"
+                placeholder="HH:MM:SS"
+                @focus="isEditingNutritionTime.bike = true"
+                @input="(event) => handleNutritionTimeInput('bike', event)"
+                @blur="() => finishNutritionTimeInput('bike')"
+                @keydown.enter="blurInput"
+              />
+            </div>
+            <div class="form-field">
+              <label for="runTime">Run</label>
+              <input
+                id="runTime"
+                :value="nutritionTimeInputs.run"
+                type="text"
+                placeholder="HH:MM:SS"
+                @focus="isEditingNutritionTime.run = true"
+                @input="(event) => handleNutritionTimeInput('run', event)"
+                @blur="() => finishNutritionTimeInput('run')"
+                @keydown.enter="blurInput"
+              />
+            </div>
+          </div>
+
+          <div class="split-fields">
+            <div class="form-field">
+              <label for="bodyWeight">Body weight (kg)</label>
+              <input id="bodyWeight" v-model.number="nutrition.bodyWeight" type="number" min="1" step="1" />
+            </div>
+            <div class="form-field">
+              <label for="carbMode">Carbs per hour</label>
+              <select id="carbMode" v-model="nutrition.carbMode">
+                <option value="default">Default target</option>
+                <option value="custom">Custom target</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="customCarbs">Target carbs (g/h)</label>
+              <input
+                id="customCarbs"
+                v-model.number="nutrition.customCarbsPerHour"
+                type="number"
+                min="0"
+                step="5"
+                :disabled="nutrition.carbMode === 'default'"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="nutrition-summary">
+          <div class="summary-metric">
+            <span class="summary-label">Race Time</span>
+            <strong>{{ nutritionTotalTimeFormatted }}</strong>
+          </div>
+          <div class="summary-metric">
+            <span class="summary-label">Carb Target</span>
+            <strong>{{ nutritionCarbsPerHour }} g/h</strong>
+          </div>
+          <div class="summary-metric">
+            <span class="summary-label">Total Carbs</span>
+            <strong>{{ nutritionTotalCarbs }} g</strong>
+          </div>
+          <div class="summary-metric">
+            <span class="summary-label">Carbs / kg / h</span>
+            <strong>{{ nutritionCarbsPerKgHour }} g</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="products-section">
+        <div class="section-heading">
+          <h2>Products</h2>
+          <button type="button" class="secondary-button" @click="addNutritionProduct">Add product</button>
+        </div>
+
+        <div class="products-table">
+          <div class="products-row products-header">
+            <span>Product</span>
+            <span>Carbs</span>
+            <span>Sodium</span>
+            <span>Servings</span>
+            <span>Total</span>
+            <span></span>
+          </div>
+
+          <div v-for="product in nutrition.products" :key="product.id" class="products-row">
+            <input v-model="product.name" type="text" aria-label="Product name" />
+            <input v-model.number="product.carbs" type="number" min="0" step="1" aria-label="Carbs per serving" />
+            <input v-model.number="product.sodium" type="number" min="0" step="10" aria-label="Sodium per serving" />
+            <input v-model.number="product.servings" type="number" min="0" step="0.5" aria-label="Servings" />
+            <span class="product-total">
+              {{ Math.round(product.carbs * product.servings) }} g / {{ Math.round(product.sodium * product.servings) }} mg
+            </span>
+            <button
+              type="button"
+              class="icon-button"
+              aria-label="Remove product"
+              :disabled="nutrition.products.length === 1"
+              @click="removeNutritionProduct(product.id)"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div class="nutrition-totals">
+          <div>
+            <span class="summary-label">Planned Carbs</span>
+            <strong>{{ nutritionPlannedCarbs }} g</strong>
+          </div>
+          <div>
+            <span class="summary-label">Carb Gap</span>
+            <strong :class="{ warning: nutritionCarbGap > 0 }">{{ nutritionCarbGap }} g</strong>
+          </div>
+          <div>
+            <span class="summary-label">Planned Sodium</span>
+            <strong>{{ nutritionPlannedSodium }} mg</strong>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer class="app-footer">
@@ -152,11 +333,18 @@ import {
 } from './composables/useTriathlonPresets';
 
 // State
+const activeView = ref('pace');
 const selectedPreset = ref('olympic');
 const targetTimeInput = ref('03:00:00');
 const targetTimeSeconds = ref(10800); // 3 hours default
 const currentPreset = ref(null);
 const presetOptions = getPresetOptions();
+const nutritionRaceTypes = [
+  { value: 'sprint', label: 'Sprint', defaultCarbsPerHour: 45 },
+  { value: 'olympic', label: 'Olympic', defaultCarbsPerHour: 60 },
+  { value: 'halfIronman', label: '70.3', defaultCarbsPerHour: 75 },
+  { value: 'ironman', label: 'Ironman', defaultCarbsPerHour: 90 }
+];
 
 const disciplines = ref({
   swim: 0,
@@ -171,6 +359,36 @@ const lockedDisciplines = ref({
   t1: true,  // T1 locked by default
   bike: false,
   t2: true,  // T2 locked by default
+  run: false
+});
+
+let nextProductId = 4;
+let isSyncingRaceTimes = false;
+
+const nutrition = ref({
+  raceType: 'olympic',
+  swimTime: '00:32:00',
+  bikeTime: '01:30:00',
+  runTime: '00:50:00',
+  bodyWeight: 75,
+  carbMode: 'default',
+  customCarbsPerHour: 60,
+  products: [
+    { id: 1, name: 'Gel', carbs: 25, sodium: 50, servings: 4 },
+    { id: 2, name: 'Drink mix', carbs: 40, sodium: 500, servings: 2 },
+    { id: 3, name: 'Bar', carbs: 35, sodium: 120, servings: 1 }
+  ]
+});
+
+const nutritionTimeInputs = ref({
+  swim: nutrition.value.swimTime,
+  bike: nutrition.value.bikeTime,
+  run: nutrition.value.runTime
+});
+
+const isEditingNutritionTime = ref({
+  swim: false,
+  bike: false,
   run: false
 });
 
@@ -198,14 +416,73 @@ const swimPace = computed(() => {
   return calculateSwimPace(disciplines.value.swim, currentPreset.value.distances.swim * 1000);
 });
 
+const swimPaceValue = computed(() => {
+  return swimPace.value.replace(' /100m', '');
+});
+
 const bikeSpeed = computed(() => {
   if (!currentPreset.value) return '';
   return calculateBikeSpeed(disciplines.value.bike, currentPreset.value.distances.bike);
 });
 
+const bikeSpeedValue = computed(() => {
+  return bikeSpeed.value.replace(' km/h', '');
+});
+
 const runPace = computed(() => {
   if (!currentPreset.value) return '';
   return calculateRunPace(disciplines.value.run, currentPreset.value.distances.run);
+});
+
+const runPaceValue = computed(() => {
+  return runPace.value.replace(' /km', '');
+});
+
+const selectedNutritionRace = computed(() => {
+  return nutritionRaceTypes.find(race => race.value === nutrition.value.raceType) || nutritionRaceTypes[1];
+});
+
+const nutritionCarbsPerHour = computed(() => {
+  if (nutrition.value.carbMode === 'custom') {
+    return Math.max(0, Number(nutrition.value.customCarbsPerHour) || 0);
+  }
+
+  return selectedNutritionRace.value.defaultCarbsPerHour;
+});
+
+const nutritionTotalSeconds = computed(() => {
+  return timeToSeconds(nutrition.value.swimTime) +
+    timeToSeconds(nutrition.value.bikeTime) +
+    timeToSeconds(nutrition.value.runTime);
+});
+
+const nutritionTotalTimeFormatted = computed(() => {
+  return secondsToTime(nutritionTotalSeconds.value);
+});
+
+const nutritionTotalCarbs = computed(() => {
+  return Math.round((nutritionTotalSeconds.value / 3600) * nutritionCarbsPerHour.value);
+});
+
+const nutritionCarbsPerKgHour = computed(() => {
+  const weight = Math.max(1, Number(nutrition.value.bodyWeight) || 1);
+  return (nutritionCarbsPerHour.value / weight).toFixed(2);
+});
+
+const nutritionPlannedCarbs = computed(() => {
+  return Math.round(nutrition.value.products.reduce((sum, product) => {
+    return sum + ((Number(product.carbs) || 0) * (Number(product.servings) || 0));
+  }, 0));
+});
+
+const nutritionPlannedSodium = computed(() => {
+  return Math.round(nutrition.value.products.reduce((sum, product) => {
+    return sum + ((Number(product.sodium) || 0) * (Number(product.servings) || 0));
+  }, 0));
+});
+
+const nutritionCarbGap = computed(() => {
+  return Math.max(0, nutritionTotalCarbs.value - nutritionPlannedCarbs.value);
 });
 
 // Methods
@@ -217,6 +494,8 @@ function loadPreset() {
 
   const preset = getPreset(selectedPreset.value);
   currentPreset.value = preset;
+  nutrition.value.raceType = selectedPreset.value;
+  nutrition.value.customCarbsPerHour = selectedNutritionRace.value.defaultCarbsPerHour;
   targetTimeInput.value = preset.targetTime;
   updateTargetTime();
 }
@@ -251,6 +530,103 @@ function updateTargetTime() {
       const times = calculateInitialTimes(newTargetSeconds, currentPreset.value.distribution);
       Object.assign(disciplines.value, times);
     }
+  }
+}
+
+function handleTargetTimeInput() {
+  if (isValidTimeFormat(targetTimeInput.value)) {
+    updateTargetTime();
+  }
+}
+
+function blurInput(event) {
+  event.currentTarget.blur();
+}
+
+function normalizeTimeInputValue(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return null;
+
+  const parts = rawValue.split(':');
+  if (parts.length < 2 || parts.length > 3) return null;
+  if (!parts.every(part => /^\d{1,2}$/.test(part))) return null;
+
+  const numericParts = parts.map(Number);
+  const secondsText = parts[parts.length - 1];
+  const seconds = secondsText.length === 1 ? Number(secondsText) * 10 : Number(secondsText);
+  if (seconds > 59) return null;
+
+  if (parts.length === 2) {
+    const [minutes] = numericParts;
+    if (minutes > 59) return null;
+    return secondsToTime((minutes * 60) + seconds);
+  }
+
+  const [hours, minutes] = numericParts;
+  if (minutes > 59) return null;
+  return secondsToTime((hours * 3600) + (minutes * 60) + seconds);
+}
+
+function nutritionKeyToTimeField(key) {
+  return `${key}Time`;
+}
+
+function handleNutritionTimeInput(key, event) {
+  const value = event.target.value;
+  nutritionTimeInputs.value[key] = value;
+
+  const normalizedValue = normalizeTimeInputValue(value);
+  if (normalizedValue !== null) {
+    nutrition.value[nutritionKeyToTimeField(key)] = normalizedValue;
+  }
+}
+
+function finishNutritionTimeInput(key) {
+  isEditingNutritionTime.value[key] = false;
+
+  const normalizedValue = normalizeTimeInputValue(nutritionTimeInputs.value[key]);
+  const timeField = nutritionKeyToTimeField(key);
+  nutritionTimeInputs.value[key] = normalizedValue ?? nutrition.value[timeField];
+
+  if (normalizedValue !== null) {
+    nutrition.value[timeField] = normalizedValue;
+  }
+}
+
+function paceTextToSeconds(value) {
+  if (!value || typeof value !== 'string') return null;
+
+  const match = value.trim().match(/^(\d{1,2}):([0-5]\d)/);
+  if (!match) return null;
+
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function updatePaceValue(disciplineKey, value) {
+  if (!currentPreset.value) return;
+
+  if (disciplineKey === 'swim') {
+    const secondsPer100m = paceTextToSeconds(value);
+    if (secondsPer100m === null) return;
+
+    const distanceM = currentPreset.value.distances.swim * 1000;
+    updateDiscipline('swim', Math.round((secondsPer100m * distanceM) / 100));
+    return;
+  }
+
+  if (disciplineKey === 'run') {
+    const secondsPerKm = paceTextToSeconds(value);
+    if (secondsPerKm === null) return;
+
+    updateDiscipline('run', Math.round(secondsPerKm * currentPreset.value.distances.run));
+    return;
+  }
+
+  if (disciplineKey === 'bike') {
+    const speed = Number.parseFloat(String(value).replace(',', '.'));
+    if (!Number.isFinite(speed) || speed <= 0) return;
+
+    updateDiscipline('bike', Math.round((currentPreset.value.distances.bike / speed) * 3600));
   }
 }
 
@@ -304,6 +680,40 @@ function toggleLock(disciplineKey) {
   lockedDisciplines.value[disciplineKey] = !lockedDisciplines.value[disciplineKey];
 }
 
+function loadNutritionRaceDefaults() {
+  const preset = getPreset(nutrition.value.raceType);
+  const times = calculateInitialTimes(timeToSeconds(preset.targetTime), preset.distribution);
+
+  isSyncingRaceTimes = true;
+  selectedPreset.value = nutrition.value.raceType;
+  currentPreset.value = preset;
+  targetTimeInput.value = preset.targetTime;
+  targetTimeSeconds.value = timeToSeconds(preset.targetTime);
+  Object.assign(disciplines.value, times);
+
+  nutrition.value.swimTime = secondsToTime(times.swim);
+  nutrition.value.bikeTime = secondsToTime(times.bike);
+  nutrition.value.runTime = secondsToTime(times.run);
+  nutrition.value.customCarbsPerHour = selectedNutritionRace.value.defaultCarbsPerHour;
+  isSyncingRaceTimes = false;
+}
+
+function addNutritionProduct() {
+  nutrition.value.products.push({
+    id: nextProductId,
+    name: 'Product',
+    carbs: 30,
+    sodium: 100,
+    servings: 1
+  });
+  nextProductId += 1;
+}
+
+function removeNutritionProduct(productId) {
+  if (nutrition.value.products.length === 1) return;
+  nutrition.value.products = nutrition.value.products.filter(product => product.id !== productId);
+}
+
 function adjustForRoundingErrors() {
   const total = disciplines.value.swim + disciplines.value.t1 +
                 disciplines.value.bike + disciplines.value.t2 +
@@ -325,6 +735,46 @@ function adjustForRoundingErrors() {
   }
 }
 
+watch(
+  () => [disciplines.value.swim, disciplines.value.bike, disciplines.value.run],
+  ([swim, bike, run]) => {
+    if (isSyncingRaceTimes) return;
+
+    isSyncingRaceTimes = true;
+    nutrition.value.swimTime = secondsToTime(swim);
+    nutrition.value.bikeTime = secondsToTime(bike);
+    nutrition.value.runTime = secondsToTime(run);
+    isSyncingRaceTimes = false;
+  }
+);
+
+watch(
+  () => [nutrition.value.swimTime, nutrition.value.bikeTime, nutrition.value.runTime],
+  ([swimTime, bikeTime, runTime]) => {
+    const times = { swim: swimTime, bike: bikeTime, run: runTime };
+    Object.entries(times).forEach(([key, value]) => {
+      if (!isEditingNutritionTime.value[key]) {
+        nutritionTimeInputs.value[key] = value;
+      }
+    });
+
+    if (isSyncingRaceTimes) return;
+    if (![swimTime, bikeTime, runTime].every(isValidTimeFormat)) return;
+
+    isSyncingRaceTimes = true;
+    disciplines.value.swim = timeToSeconds(swimTime);
+    disciplines.value.bike = timeToSeconds(bikeTime);
+    disciplines.value.run = timeToSeconds(runTime);
+    targetTimeSeconds.value = disciplines.value.swim +
+      disciplines.value.t1 +
+      disciplines.value.bike +
+      disciplines.value.t2 +
+      disciplines.value.run;
+    targetTimeInput.value = secondsToTime(targetTimeSeconds.value);
+    isSyncingRaceTimes = false;
+  }
+);
+
 // Initialize with Olympic preset
 loadPreset();
 </script>
@@ -343,9 +793,37 @@ body {
 }
 
 #app {
-  max-width: 800px;
+  max-width: 980px;
   margin: 0 auto;
   padding: 20px;
+}
+
+.app-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 12px;
+}
+
+.nav-button {
+  flex: 1;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  color: white;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nav-button.active {
+  color: #2c3e50;
+  background: white;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
 }
 
 .app-header {
@@ -384,7 +862,8 @@ body {
 }
 
 .preset-selector label,
-.target-time-input label {
+.target-time-input label,
+.form-field label {
   display: block;
   font-weight: 600;
   margin-bottom: 8px;
@@ -392,7 +871,10 @@ body {
 }
 
 .preset-selector select,
-.target-time-input input {
+.target-time-input input,
+.form-field select,
+.form-field input,
+.products-row input {
   width: 100%;
   padding: 12px;
   font-size: 16px;
@@ -402,9 +884,17 @@ body {
 }
 
 .preset-selector select:focus,
-.target-time-input input:focus {
+.target-time-input input:focus,
+.form-field select:focus,
+.form-field input:focus,
+.products-row input:focus {
   outline: none;
   border-color: #667eea;
+}
+
+.form-field input:disabled {
+  color: #888;
+  background: #f5f5f5;
 }
 
 .distance-info {
@@ -484,6 +974,126 @@ body {
   color: #4caf50;
 }
 
+.nutrition-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.nutrition-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+}
+
+.nutrition-panel h2,
+.section-heading h2 {
+  margin-bottom: 16px;
+  color: #2c3e50;
+  font-size: 22px;
+}
+
+.split-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.form-field {
+  margin-bottom: 16px;
+}
+
+.nutrition-summary,
+.nutrition-totals {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.summary-metric,
+.nutrition-totals > div {
+  padding: 16px;
+  border: 1px solid #e8ebef;
+  border-radius: 8px;
+  background: #f8f9fa;
+}
+
+.summary-metric strong,
+.nutrition-totals strong {
+  display: block;
+  margin-top: 4px;
+  color: #2c3e50;
+  font-size: 22px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.secondary-button,
+.icon-button {
+  border: 0;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-button {
+  padding: 10px 14px;
+  color: white;
+  background: #667eea;
+}
+
+.products-table {
+  display: grid;
+  gap: 8px;
+}
+
+.products-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(86px, 0.7fr) minmax(98px, 0.8fr) minmax(94px, 0.7fr) minmax(150px, 1fr) 42px;
+  gap: 8px;
+  align-items: center;
+}
+
+.products-header {
+  color: #666;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.product-total {
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.icon-button {
+  width: 42px;
+  height: 42px;
+  color: #c62828;
+  background: #ffebee;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.icon-button:disabled {
+  color: #aaa;
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.nutrition-totals {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.warning {
+  color: #c62828 !important;
+}
+
 .app-footer {
   text-align: center;
   color: white;
@@ -514,6 +1124,31 @@ body {
     flex-direction: column;
     gap: 16px;
     text-align: center;
+  }
+
+  .nutrition-grid,
+  .split-fields,
+  .nutrition-totals {
+    grid-template-columns: 1fr;
+  }
+
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .products-row {
+    grid-template-columns: 1fr 1fr;
+    padding: 12px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .products-header {
+    display: none;
+  }
+
+  .product-total {
+    grid-column: 1 / -1;
   }
 }
 </style>

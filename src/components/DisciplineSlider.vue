@@ -6,8 +6,28 @@
         <span class="discipline-name">{{ label }}</span>
       </div>
       <div class="discipline-stats">
-        <span class="discipline-time">{{ formattedTime }}</span>
-        <span class="discipline-percentage">{{ percentage }}%</span>
+        <input
+          class="discipline-time"
+          type="text"
+          :value="timeInput"
+          placeholder="HH:MM:SS"
+          aria-label="Discipline time"
+          @input="handleTimeInput"
+          @blur="resetTimeInput"
+          @keydown.enter="blurInput"
+        />
+        <label class="percentage-input">
+          <input
+            type="number"
+            :value="percentage"
+            min="0"
+            max="100"
+            step="1"
+            aria-label="Discipline percentage"
+            @input="handlePercentageInput"
+          />
+          <span>%</span>
+        </label>
         <label class="toggle-switch">
           <input
             type="checkbox"
@@ -31,15 +51,24 @@
       />
     </div>
     
-    <div v-if="paceInfo" class="pace-info">
-      {{ paceInfo }}
+    <div v-if="paceValue" class="pace-info">
+      <input
+        type="text"
+        :value="paceInput"
+        aria-label="Pace or speed"
+        @input="handlePaceInput"
+        @focus="isEditingPace = true"
+        @blur="finishPaceInput"
+        @keydown.enter="blurInput"
+      />
+      <span>{{ paceUnit }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
-import { secondsToTime, calculatePercentage } from '../utils/timeUtils';
+import { computed, ref, watch } from 'vue';
+import { secondsToTime, timeToSeconds, isValidTimeFormat, calculatePercentage } from '../utils/timeUtils';
 
 const props = defineProps({
   discipline: {
@@ -70,28 +99,113 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  paceValue: {
+    type: String,
+    default: ''
+  },
+  paceUnit: {
+    type: String,
+    default: ''
+  },
   isLocked: {
     type: Boolean,
     default: false
   }
 });
 
-const emit = defineEmits(['update:modelValue', 'toggle-lock']);
+const emit = defineEmits(['update:modelValue', 'update:paceInfo', 'toggle-lock']);
 
 const formattedTime = computed(() => {
   return secondsToTime(props.modelValue);
 });
 
+const timeInput = ref(formattedTime.value);
+const paceInput = ref(props.paceValue);
+const isEditingPace = ref(false);
+
 const percentage = computed(() => {
   return calculatePercentage(props.modelValue, props.totalTime);
 });
+
+watch(formattedTime, (value) => {
+  timeInput.value = value;
+});
+
+watch(
+  () => props.paceValue,
+  (value) => {
+    if (!isEditingPace.value) {
+      paceInput.value = value;
+    }
+  }
+);
 
 function handleInput(event) {
   emit('update:modelValue', parseInt(event.target.value, 10));
 }
 
+function handleTimeInput(event) {
+  const value = event.target.value;
+  timeInput.value = value;
+
+  if (isValidTimeFormat(value)) {
+    emit('update:modelValue', Math.min(timeToSeconds(value), props.maxValue));
+  }
+}
+
+function resetTimeInput() {
+  timeInput.value = formattedTime.value;
+}
+
+function handlePercentageInput(event) {
+  const percentageValue = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+  emit('update:modelValue', Math.round((percentageValue / 100) * props.totalTime));
+}
+
+function handlePaceInput(event) {
+  const value = event.target.value;
+  paceInput.value = value;
+
+  const normalizedValue = normalizePaceValue(value);
+  if (normalizedValue !== null) {
+    emit('update:paceInfo', normalizedValue);
+  }
+}
+
+function finishPaceInput() {
+  isEditingPace.value = false;
+
+  const normalizedValue = normalizePaceValue(paceInput.value);
+  paceInput.value = normalizedValue ?? props.paceValue;
+}
+
+function normalizePaceValue(value) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return null;
+
+  if (props.discipline === 'bike') {
+    const normalizedSpeed = rawValue.replace(',', '.').match(/\d+(?:\.\d+)?/);
+    if (!normalizedSpeed) return null;
+
+    return normalizedSpeed[0];
+  }
+
+  const match = rawValue.match(/^(\d{1,2})(?::([0-5]?\d))?/);
+  if (!match || match[2] === undefined) return null;
+
+  const minutes = Number(match[1]);
+  const secondsText = match[2];
+  const seconds = secondsText.length === 1 ? Number(secondsText) * 10 : Number(secondsText);
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 function toggleLock() {
   emit('toggle-lock', props.discipline);
+}
+
+function blurInput(event) {
+  event.currentTarget.blur();
 }
 </script>
 
@@ -206,20 +320,47 @@ function toggleLock() {
   color: #2c3e50;
 }
 
-.discipline-time {
+.discipline-time,
+.percentage-input input {
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
   font-family: 'Courier New', monospace;
-  font-size: 18px;
   font-weight: 700;
   color: #2c3e50;
 }
 
-.discipline-percentage {
+.discipline-time {
+  width: 104px;
+  padding: 6px 8px;
+  font-size: 18px;
+}
+
+.percentage-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
   font-size: 14px;
   font-weight: 600;
-  padding: 4px 8px;
   border-radius: 6px;
   background: #f0f0f0;
   color: #666;
+}
+
+.percentage-input input {
+  width: 48px;
+  padding: 2px 4px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 14px;
+  text-align: right;
+}
+
+.discipline-time:focus,
+.percentage-input input:focus {
+  outline: none;
+  border-color: currentColor;
 }
 
 .slider-container {
@@ -267,11 +408,31 @@ function toggleLock() {
 }
 
 .pace-info {
-  font-size: 13px;
-  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
   text-align: right;
   margin-top: 8px;
+  color: #666;
+  font-size: 13px;
   font-style: italic;
+}
+
+.pace-info input {
+  width: 70px;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  color: #666;
+  font-size: 13px;
+  font-style: italic;
+  text-align: right;
+}
+
+.pace-info input:focus {
+  outline: none;
+  border-color: currentColor;
 }
 
 /* Discipline-specific colors */
@@ -300,23 +461,23 @@ function toggleLock() {
   color: #4caf50;
 }
 
-.discipline-swim .discipline-percentage {
+.discipline-swim .percentage-input {
   background: #e3f2fd;
   color: #1976d2;
 }
 
-.discipline-t1 .discipline-percentage,
-.discipline-t2 .discipline-percentage {
+.discipline-t1 .percentage-input,
+.discipline-t2 .percentage-input {
   background: #fff3e0;
   color: #f57c00;
 }
 
-.discipline-bike .discipline-percentage {
+.discipline-bike .percentage-input {
   background: #f3e5f5;
   color: #7b1fa2;
 }
 
-.discipline-run .discipline-percentage {
+.discipline-run .percentage-input {
   background: #e8f5e9;
   color: #388e3c;
 }
