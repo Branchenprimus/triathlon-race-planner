@@ -331,13 +331,8 @@ import {
   getPresetOptions, 
   calculateInitialTimes 
 } from './composables/useTriathlonPresets';
+import { createPersistentState } from './utils/persistence';
 
-// State
-const activeView = ref('pace');
-const selectedPreset = ref('olympic');
-const targetTimeInput = ref('03:00:00');
-const targetTimeSeconds = ref(10800); // 3 hours default
-const currentPreset = ref(null);
 const presetOptions = getPresetOptions();
 const nutritionRaceTypes = [
   { value: 'sprint', label: 'Sprint', defaultCarbsPerHour: 45 },
@@ -345,31 +340,14 @@ const nutritionRaceTypes = [
   { value: 'halfIronman', label: '70.3', defaultCarbsPerHour: 75 },
   { value: 'ironman', label: 'Ironman', defaultCarbsPerHour: 90 }
 ];
-
-const disciplines = ref({
-  swim: 0,
-  t1: 0,
-  bike: 0,
-  t2: 0,
-  run: 0
-});
-
-const lockedDisciplines = ref({
-  swim: false,
-  t1: true,  // T1 locked by default
-  bike: false,
-  t2: true,  // T2 locked by default
-  run: false
-});
-
-let nextProductId = 4;
-let isSyncingRaceTimes = false;
-
-const nutrition = ref({
+const defaultPreset = getPreset('olympic');
+const defaultTargetTimeSeconds = timeToSeconds(defaultPreset.targetTime);
+const defaultDisciplines = calculateInitialTimes(defaultTargetTimeSeconds, defaultPreset.distribution);
+const defaultNutrition = {
   raceType: 'olympic',
-  swimTime: '00:32:00',
-  bikeTime: '01:30:00',
-  runTime: '00:50:00',
+  swimTime: secondsToTime(defaultDisciplines.swim),
+  bikeTime: secondsToTime(defaultDisciplines.bike),
+  runTime: secondsToTime(defaultDisciplines.run),
   bodyWeight: 75,
   carbMode: 'default',
   customCarbsPerHour: 60,
@@ -378,6 +356,47 @@ const nutrition = ref({
     { id: 2, name: 'Drink mix', carbs: 40, sodium: 500, servings: 2 },
     { id: 3, name: 'Bar', carbs: 35, sodium: 120, servings: 1 }
   ]
+};
+const defaultAppState = {
+  activeView: 'pace',
+  selectedPreset: 'olympic',
+  targetTimeInput: defaultPreset.targetTime,
+  targetTimeSeconds: defaultTargetTimeSeconds,
+  disciplines: defaultDisciplines,
+  lockedDisciplines: {
+    swim: false,
+    t1: true,  // T1 locked by default
+    bike: false,
+    t2: true,  // T2 locked by default
+    run: false
+  },
+  nutrition: defaultNutrition
+};
+const browserStorage = typeof window === 'undefined' ? null : window.localStorage;
+const persistentState = createPersistentState(
+  browserStorage,
+  'triathlon-race-planner:v1',
+  defaultAppState
+);
+const initialState = persistentState.initialState;
+
+// State
+const activeView = ref(initialState.activeView);
+const selectedPreset = ref(initialState.selectedPreset);
+const targetTimeInput = ref(initialState.targetTimeInput);
+const targetTimeSeconds = ref(initialState.targetTimeSeconds);
+const currentPreset = ref(selectedPreset.value ? getPreset(selectedPreset.value) : null);
+
+const disciplines = ref({ ...initialState.disciplines });
+
+const lockedDisciplines = ref({ ...initialState.lockedDisciplines });
+
+let nextProductId = Math.max(0, ...initialState.nutrition.products.map(product => Number(product.id) || 0)) + 1;
+let isSyncingRaceTimes = false;
+
+const nutrition = ref({
+  ...initialState.nutrition,
+  products: initialState.nutrition.products.map(product => ({ ...product }))
 });
 
 const nutritionTimeInputs = ref({
@@ -775,8 +794,19 @@ watch(
   }
 );
 
-// Initialize with Olympic preset
-loadPreset();
+watch(
+  () => ({
+    activeView: activeView.value,
+    selectedPreset: selectedPreset.value,
+    targetTimeInput: targetTimeInput.value,
+    targetTimeSeconds: targetTimeSeconds.value,
+    disciplines: disciplines.value,
+    lockedDisciplines: lockedDisciplines.value,
+    nutrition: nutrition.value
+  }),
+  (state) => persistentState.save(state),
+  { deep: true }
+);
 </script>
 
 <style>
