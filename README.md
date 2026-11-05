@@ -1,139 +1,88 @@
-# 🏊‍♂️🚴‍♂️🏃‍♂️ Triathlon Race Planner
+# 🏊‍♂️ 🚴‍♂️ 🏃‍♂️ Race Planner
 
-Interactive Vue 3 application for planning triathlon race splits with dynamic time distribution.
+Vue 3 race planning for **Triathlon, Radrennen, Lauf and Schwimmen**. Pace and Nutrition are always visible together: two large cards on desktop (>1050 px), stacked on smaller screens. The repository, package and deployment identity remain `triathlon-race-planner`.
 
-## Features
+## Planning a race
 
-- **Distance Presets**: Sprint, Olympic, Half-Ironman, and Ironman distances
-- **Interactive Sliders**: Adjust any discipline time with real-time updates
-- **Proportional Redistribution**: When one discipline changes, others adjust automatically to maintain target time
-- **Pace Calculations**: Real-time pace/speed for swim, bike, and run
-- **Visual Feedback**: Color-coded disciplines with percentage breakdowns
-- **Responsive Design**: Works on desktop and mobile devices
+1. Select a sport using the four top tabs. Arrow Left/Right and Home/End navigate the tabs; Tab moves into the active plan.
+2. Choose a distance preset, or **Custom** to edit distances in kilometres (e.g. `0.4` = 400 m). Each sport retains its own selected preset, distances, splits and lock settings while switching.
+3. Edit the target or discipline time as `HH:MM:SS`, move a slider, or edit pace/speed. Swim pace uses `MM:SS /100m`, run pace `MM:SS min/km`, cycling speed `km/h` (decimal point or comma).
+4. Nutrition immediately uses the **actual active race duration**. Single-sport races contain only that sport, with no transitions or hidden triathlon splits. Editing a single-sport duration or pace changes its total and target time, rather than redistributing it back to a fixed target.
 
-## Distance Presets
+Times and distances in presets are editable **planning examples**, not actual event data or performance recommendations. Invalid, negative and non-finite inputs are rejected; invalid partial text is restored on blur. Zero duration/distance is allowed; pace editing requires a positive distance. Time inputs support up to `99:59:59`. Distances and nutrition amounts accept finite values from 0 to 1,000,000; body weight must be positive.
 
-### Sprint
-- **Distances**: 750m swim, 20km bike, 5km run
-- **Target Time**: 1:30:00
-- **Distribution**: Swim 20%, T1 3%, Bike 45%, T2 2%, Run 30%
+### Standard distances
 
-### Olympic
-- **Distances**: 1.5km swim, 40km bike, 10km run
-- **Target Time**: 3:00:00
-- **Distribution**: Swim 18%, T1 2%, Bike 50%, T2 2%, Run 28%
+| Sport | Presets |
+| --- | --- |
+| Triathlon | Sprint (0.75/20/5 km), Olympic (1.5/40/10 km), Half-Ironman (1.9/90/21.1 km), Ironman (3.8/180/42.2 km) |
+| Radrennen | 20, 40, 90, 180 km |
+| Lauf | 5 km, 10 km, half marathon (21.0975 km), marathon (42.195 km) |
+| Schwimmen | Pool: 400, 800, 1500 m; Open Water: 1.9, 3.8, 5 km |
 
-### Half-Ironman (70.3)
-- **Distances**: 1.9km swim, 90km bike, 21.1km run
-- **Target Time**: 6:00:00
-- **Distribution**: Swim 15%, T1 2%, Bike 52%, T2 2%, Run 29%
+Every sport includes Custom. Selecting Custom starts from the current distance/time; selecting a standard preset resets distances and times to that template, so old custom times do not leak into a new preset. Existing triathlon target times and distributions are unchanged (1:30 / 3:00 / 6:00 / 12:00).
 
-### Ironman (140.6)
-- **Distances**: 3.8km swim, 180km bike, 42.2km run
-- **Target Time**: 12:00:00
-- **Distribution**: Swim 13%, T1 2%, Bike 53%, T2 2%, Run 30%
+### Triathlon redistribution and locks
 
-## Setup
+Triathlon retains swim, T1, bike, T2 and run, with T1/T2 locked by default. Editing a split redistributes remaining time proportionally among the other unlocked splits. Locked splits remain fixed when another split or the target changes. A lock prevents automatic redistribution, not direct editing of that split. The edited split is bounded by the remaining available time, so other splits cannot become negative. Integer allocation preserves the exact total despite rounding or zero-valued splits.
+
+A target below the sum of locked times, or an adjustment with no other adjustable split, is rejected. Unlock a split first. Selecting a new preset explicitly resets all times to its template, retaining lock choices.
+
+### Nutrition estimates
+
+The Nutrition card has one source of race duration: the active Pace plan, **including transitions for triathlon**. There are no separate nutrition time inputs or second race selection that can drift out of sync.
+
+The existing selectable carbohydrate templates are retained: Sprint 45, Olympic 60, 70.3 75 and Ironman 90 g/h. These are configurable legacy planning values, **not individual nutrition or medical recommendations**. Choose Custom target for your own g/h. Selecting a triathlon preset updates the default target template; choosing a nutrition template never changes race times. Nutrition settings and products are shared across sports.
+
+- Total carbohydrate estimate = active duration (hours) × selected g/h, rounded to grams.
+- Carbs/kg/h uses the entered body weight.
+- Product names, carbs/serving, sodium/serving and servings remain editable; products can be added/removed (at least one remains).
+- Planned carbs/sodium sum the products; Carb Gap is the nonnegative difference from the carbohydrate estimate.
+- The existing app has no calorie or fluid model; this update does not invent one.
+
+## Local persistence and migration
+
+State is automatically saved in this browser under `triathlon-race-planner:v2`: selected sport, all four sport configurations, custom distances/times, triathlon locks, nutrition settings and products. Reload restores the selected sport and its plan. There is no backend sync.
+
+When no v2 state exists, the previous `triathlon-race-planner:v1` triathlon state migrates into the Triathlon tab, preserving valid splits, lock choices and nutrition/product values. The original v1 entry is left untouched. Actual saved splits determine duration; stale legacy target strings or independent nutrition times are not trusted. Legacy Custom did not store custom distances, so migration starts those distances from Olympic defaults.
+
+Persisted data is validated field by field: unknown sports/presets, nulls, malformed JSON, invalid numbers, wrong types and duplicate product identifiers recover safely. Standard preset distances come from the preset; custom distances come from validated saved values. Storage access/quota failures do not prevent planning.
+
+## Development
 
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
+npm ci
 npm run dev
-
-# Build for production
+npm test
 npm run build
-
-# Preview production build
 npm run preview
 ```
 
-## Usage
+Tests use Node's built-in test runner and Vue reactivity, without adding a test framework. They cover all sport modes and presets, custom distances, independent configurations, single-sport time/pace changes and reactive nutrition, triathlon redistribution/locks, persistence/reload, legacy migration, malformed storage and input validation. A production build compiles the Vue templates.
 
-1. **Select a Distance Preset** or use Custom mode
-2. **Set Target Time** in HH:MM:SS format
-3. **Lock/Unlock Disciplines** - Use toggle switches to lock times you want to keep fixed
-   - 🏊‍♂️ Schwimmen (Swimming) - unlocked by default
-   - 🔄 Wechselzone 1 (Transition 1) - **locked by default**
-   - 🚴‍♂️ Radfahren (Cycling) - unlocked by default
-   - 🔄 Wechselzone 2 (Transition 2) - **locked by default**
-   - 🏃‍♂️ Laufen (Running) - unlocked by default
-4. **Adjust Sliders** - Move any unlocked slider
-5. **Watch Times Update** - Only unlocked disciplines adjust proportionally
+### Main files
 
-## How It Works
+- `src/App.vue`: accessible sport tabs, responsive Pace/Nutrition cards and form bindings.
+- `src/composables/useRacePlanner.js`: active sport state, presets, time/pace actions, nutrition derivation, validated loading/migration and saving.
+- `src/composables/useTriathlonPresets.js`: original triathlon preset definitions.
+- `src/components/DisciplineSlider.vue`: shared discipline time, slider, pace and optional triathlon distribution/lock controls.
+- `src/utils/persistence.js`: best-effort JSON storage helpers.
+- `src/utils/timeUtils.js`: time and pace formatting.
 
-### Lock/Unlock Toggle Feature
+### Stable browser verification selectors
 
-Each discipline has a toggle switch to lock/unlock its time:
-- **Locked** (🔒): Time stays fixed, won't change when other sliders move
-- **Unlocked** (🔓): Time adjusts proportionally when other sliders change
+- Tabs: `getByRole('tab', { name: 'Triathlon', exact: true })` (also `Radrennen`, `Lauf`, `Schwimmen`). IDs: `#tab-triathlon`, `#tab-cycling`, `#tab-running`, `#tab-swimming`.
+- Cards: headings `Pace` and `Nutrition`; `.pace-card` and `.nutrition-card`.
+- Distance preset / target: `#preset`, `#targetTime`.
+- Distance inputs: `#distance-swim`, `#distance-bike`, `#distance-run` (only active distances rendered; enabled in Custom).
+- Discipline: `.discipline-swim`, `.discipline-bike`, `.discipline-run`, `.discipline-t1`, `.discipline-t2`; time `.discipline-time`, pace `.pace-info input`.
+- Accessible discipline names: `Schwimmen time`, `Radfahren time`, `Laufen time`; corresponding `… pace or speed`, `… duration slider`, and triathlon-only `… lock`.
+- Actual totals: `#pace-total-duration`, `#nutrition-total-duration`, `#nutrition-total-carbs`, `#nutrition-carbs-per-hour`.
+- Nutrition inputs: `#bodyWeight`, `#carbMode`, `#customCarbs`, `#raceType` (default-template mode only).
 
-**Default State**: T1 and T2 are locked by default (transitions are typically fixed), while swim, bike, and run are unlocked.
+## Technology
 
-### Proportional Redistribution Algorithm
-
-When you adjust a discipline slider:
-
-1. Calculate the time difference (delta) from the previous value
-2. Identify all UNLOCKED disciplines (excluding the one being changed)
-3. Redistribute the delta proportionally based on each unlocked discipline's current percentage
-4. Locked disciplines remain unchanged
-5. Ensure the sum always equals the target time
-
-**Example 1** - Default locks (T1, T2 locked):
-- Increase swimming by 5 minutes → bike and run share -5 minutes proportionally
-- T1 and T2 stay fixed
-
-**Example 2** - Lock swimming time:
-- Toggle swim to "Locked"
-- Adjust bike → only run and transitions adjust (if unlocked)
-- Swimming stays at its locked value
-
-**Example 3** - Lock everything except one:
-- Lock swim, bike, T1, T2
-- Only run can adjust to maintain target time
-- Useful for planning around a specific run goal
-
-### Time Calculations
-
-- **Swim Pace**: Minutes per 100 meters
-- **Bike Speed**: Kilometers per hour
-- **Run Pace**: Minutes per kilometer
-
-## Project Structure
-
-```
-triathlon-race-planner/
-├── src/
-│   ├── components/
-│   │   └── DisciplineSlider.vue    # Slider component for each discipline
-│   ├── composables/
-│   │   └── useTriathlonPresets.js  # Preset configurations
-│   ├── utils/
-│   │   └── timeUtils.js            # Time conversion utilities
-│   ├── App.vue                     # Main application component
-│   ├── main.js                     # Application entry point
-│   └── style.css                   # Global styles
-├── index.html
-├── package.json
-└── vite.config.js
-```
-
-## Technologies
-
-- **Vue 3** - Composition API
-- **Vite** - Build tool and dev server
-- **Native HTML5** - Range inputs for sliders
-- **CSS3** - Gradients, flexbox, grid
-
-## Browser Support
-
-Modern browsers with ES6+ support:
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
+Vue 3 Composition API, Vite 8, native form controls and CSS grid/flexbox. No account or external nutrition service required.
 
 ## License
 

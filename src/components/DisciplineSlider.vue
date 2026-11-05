@@ -11,27 +11,28 @@
           type="text"
           :value="timeInput"
           placeholder="HH:MM:SS"
-          aria-label="Discipline time"
+          :aria-label="`${label} time`"
           @input="handleTimeInput"
           @blur="resetTimeInput"
           @keydown.enter="blurInput"
         />
-        <label class="percentage-input">
+        <label v-if="showDistribution" class="percentage-input">
           <input
             type="number"
             :value="percentage"
             min="0"
             max="100"
             step="1"
-            aria-label="Discipline percentage"
+            :aria-label="`${label} percentage`"
             @input="handlePercentageInput"
           />
           <span>%</span>
         </label>
-        <label class="toggle-switch">
+        <label v-if="showDistribution" class="toggle-switch">
           <input
             type="checkbox"
             :checked="isLocked"
+            :aria-label="`${label} lock`"
             @change="toggleLock"
           />
           <span class="toggle-slider"></span>
@@ -46,6 +47,7 @@
         :min="0"
         :max="maxValue"
         :value="modelValue"
+        :aria-label="`${label} duration slider`"
         @input="handleInput"
         class="slider"
       />
@@ -55,7 +57,7 @@
       <input
         type="text"
         :value="paceInput"
-        aria-label="Pace or speed"
+        :aria-label="`${label} pace or speed`"
         @input="handlePaceInput"
         @focus="isEditingPace = true"
         @blur="finishPaceInput"
@@ -110,6 +112,10 @@ const props = defineProps({
   isLocked: {
     type: Boolean,
     default: false
+  },
+  showDistribution: {
+    type: Boolean,
+    default: true
   }
 });
 
@@ -149,7 +155,8 @@ function handleTimeInput(event) {
   timeInput.value = value;
 
   if (isValidTimeFormat(value)) {
-    emit('update:modelValue', Math.min(timeToSeconds(value), props.maxValue));
+    const seconds = timeToSeconds(value);
+    emit('update:modelValue', props.showDistribution ? Math.min(seconds, props.maxValue) : seconds);
   }
 }
 
@@ -175,8 +182,8 @@ function handlePaceInput(event) {
 function finishPaceInput() {
   isEditingPace.value = false;
 
-  const normalizedValue = normalizePaceValue(paceInput.value);
-  paceInput.value = normalizedValue ?? props.paceValue;
+  // The parent may clamp/reject a pace to keep locked triathlon splits valid.
+  paceInput.value = props.paceValue;
 }
 
 function normalizePaceValue(value) {
@@ -184,18 +191,17 @@ function normalizePaceValue(value) {
   if (!rawValue) return null;
 
   if (props.discipline === 'bike') {
-    const normalizedSpeed = rawValue.replace(',', '.').match(/\d+(?:\.\d+)?/);
-    if (!normalizedSpeed) return null;
-
-    return normalizedSpeed[0];
+    const normalizedSpeed = rawValue.replace(',', '.');
+    if (!/^\d+(?:\.\d+)?$/.test(normalizedSpeed) || Number(normalizedSpeed) <= 0) return null;
+    return normalizedSpeed;
   }
 
-  const match = rawValue.match(/^(\d{1,2})(?::([0-5]?\d))?/);
-  if (!match || match[2] === undefined) return null;
+  const match = rawValue.match(/^(\d{1,5}):([0-5]\d)$/);
+  if (!match) return null;
 
   const minutes = Number(match[1]);
   const secondsText = match[2];
-  const seconds = secondsText.length === 1 ? Number(secondsText) * 10 : Number(secondsText);
+  const seconds = Number(secondsText);
 
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
@@ -235,6 +241,8 @@ function blurInput(event) {
 
 .discipline-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
@@ -293,6 +301,11 @@ function blurInput(event) {
 
 .toggle-switch input:checked + .toggle-slider {
   background-color: #ffa726;
+}
+
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 3px solid #354cc4;
+  outline-offset: 3px;
 }
 
 .toggle-switch input:checked + .toggle-slider::before {

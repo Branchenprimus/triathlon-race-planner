@@ -13,6 +13,10 @@ route:
 access:
   enabled: true
 
+homepage:
+  name: Race Planner
+  description: Pace und Nutrition für Triathlon, Radrennen, Lauf und Schwimmen
+
 resources:
   requests:
     cpu: 25m

@@ -1,1184 +1,239 @@
 <template>
-  <div id="app">
-    <nav class="app-nav" aria-label="Main navigation">
-      <button
-        type="button"
-        class="nav-button"
-        :class="{ active: activeView === 'pace' }"
-        @click="activeView = 'pace'"
-      >
-        Pace
-      </button>
-      <button
-        type="button"
-        class="nav-button"
-        :class="{ active: activeView === 'nutrition' }"
-        @click="activeView = 'nutrition'"
-      >
-        Nutrition
+  <div class="planner">
+    <header class="app-header">
+      <h1>🏊‍♂️ 🚴‍♂️ 🏃‍♂️ Race Planner</h1>
+      <p class="subtitle">Dein Rennen · deine Zeiten · dein Verpflegungsplan</p>
+    </header>
+
+    <nav class="app-nav" role="tablist" aria-label="Sportart">
+      <button v-for="sport in SPORT_OPTIONS" :id="`tab-${sport.value}`" :key="sport.value"
+        type="button" role="tab" class="nav-button" :class="{ active: state.selectedSport === sport.value }"
+        :aria-selected="state.selectedSport === sport.value" aria-controls="race-panel"
+        :tabindex="state.selectedSport === sport.value ? 0 : -1"
+        @click="selectSport(sport.value)" @keydown="handleTabKey($event, sport.value)">
+        {{ sport.label }}
       </button>
     </nav>
 
-    <header class="app-header">
-      <h1>🏊‍♂️🚴‍♂️🏃‍♂️ Triathlon Race Planner</h1>
-      <p class="subtitle">Plan your race splits with interactive time distribution</p>
-    </header>
-
-    <main v-if="activeView === 'pace'" class="app-main">
-      <div class="controls-section">
-        <div class="preset-selector">
-          <label for="preset">Distance Preset:</label>
-          <select id="preset" v-model="selectedPreset" @change="loadPreset">
-            <option value="">Custom</option>
-            <option v-for="option in presetOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-        </div>
-
-        <div class="target-time-input">
-          <label for="targetTime">Target Time (HH:MM:SS):</label>
-          <input
-            id="targetTime"
-            type="text"
-            v-model="targetTimeInput"
-            @input="handleTargetTimeInput"
-            @blur="updateTargetTime"
-            @keyup.enter="blurInput"
-            placeholder="HH:MM:SS"
-            pattern="[0-9]{1,2}:[0-5][0-9]:[0-5][0-9]"
-          />
-        </div>
-
-        <div v-if="currentPreset" class="distance-info">
-          <div class="distance-item">
-            <span class="distance-icon">🏊‍♂️</span>
-            <span>{{ currentPreset.distances.swim }} km</span>
-          </div>
-          <div class="distance-item">
-            <span class="distance-icon">🚴‍♂️</span>
-            <span>{{ currentPreset.distances.bike }} km</span>
-          </div>
-          <div class="distance-item">
-            <span class="distance-icon">🏃‍♂️</span>
-            <span>{{ currentPreset.distances.run }} km</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="disciplines-section">
-        <DisciplineSlider
-          discipline="swim"
-          label="Schwimmen"
-          icon="🏊‍♂️"
-          :model-value="disciplines.swim"
-          :max-value="targetTimeSeconds"
-          :total-time="targetTimeSeconds"
-          :pace-value="swimPaceValue"
-          pace-unit="/100m"
-          :is-locked="lockedDisciplines.swim"
-          @update:model-value="(val) => updateDiscipline('swim', val)"
-          @update:pace-info="(val) => updatePaceValue('swim', val)"
-          @toggle-lock="toggleLock"
-        />
-
-        <DisciplineSlider
-          discipline="t1"
-          label="Wechselzone 1"
-          icon="🔄"
-          :model-value="disciplines.t1"
-          :max-value="targetTimeSeconds"
-          :total-time="targetTimeSeconds"
-          :is-locked="lockedDisciplines.t1"
-          @update:model-value="(val) => updateDiscipline('t1', val)"
-          @toggle-lock="toggleLock"
-        />
-
-        <DisciplineSlider
-          discipline="bike"
-          label="Radfahren"
-          icon="🚴‍♂️"
-          :model-value="disciplines.bike"
-          :max-value="targetTimeSeconds"
-          :total-time="targetTimeSeconds"
-          :pace-value="bikeSpeedValue"
-          pace-unit="km/h"
-          :is-locked="lockedDisciplines.bike"
-          @update:model-value="(val) => updateDiscipline('bike', val)"
-          @update:pace-info="(val) => updatePaceValue('bike', val)"
-          @toggle-lock="toggleLock"
-        />
-
-        <DisciplineSlider
-          discipline="t2"
-          label="Wechselzone 2"
-          icon="🔄"
-          :model-value="disciplines.t2"
-          :max-value="targetTimeSeconds"
-          :total-time="targetTimeSeconds"
-          :is-locked="lockedDisciplines.t2"
-          @update:model-value="(val) => updateDiscipline('t2', val)"
-          @toggle-lock="toggleLock"
-        />
-
-        <DisciplineSlider
-          discipline="run"
-          label="Laufen"
-          icon="🏃‍♂️"
-          :model-value="disciplines.run"
-          :max-value="targetTimeSeconds"
-          :total-time="targetTimeSeconds"
-          :pace-value="runPaceValue"
-          pace-unit="min/km"
-          :is-locked="lockedDisciplines.run"
-          @update:model-value="(val) => updateDiscipline('run', val)"
-          @update:pace-info="(val) => updatePaceValue('run', val)"
-          @toggle-lock="toggleLock"
-        />
-      </div>
-
-      <div class="summary-section" :class="{ valid: isValidTotal }">
-        <div class="summary-item">
-          <span class="summary-label">Total Time:</span>
-          <span class="summary-value">{{ totalTimeFormatted }}</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-label">Target Time:</span>
-          <span class="summary-value">{{ targetTimeFormatted }}</span>
-        </div>
-        <div class="summary-status">
-          <span v-if="isValidTotal" class="status-icon">✓</span>
-          <span v-else class="status-icon">⚠</span>
-          <span>{{ isValidTotal ? 'Times match!' : 'Adjusting...' }}</span>
-        </div>
-      </div>
-    </main>
-
-    <main v-else class="app-main nutrition-main">
-      <section class="nutrition-grid">
-        <div class="nutrition-panel">
-          <h2>Nutrition</h2>
-
+    <main id="race-panel" role="tabpanel" :aria-labelledby="`tab-${state.selectedSport}`" class="planner-grid">
+      <section class="app-main pace-card" aria-labelledby="pace-heading">
+        <h2 id="pace-heading">Pace</h2>
+        <div class="controls-section">
           <div class="form-field">
-            <label for="raceType">Race type</label>
-            <select id="raceType" v-model="nutrition.raceType" @change="loadNutritionRaceDefaults">
-              <option v-for="race in nutritionRaceTypes" :key="race.value" :value="race.value">
-                {{ race.label }}
-              </option>
+            <label for="preset">Distance Preset</label>
+            <select id="preset" :value="config.selectedPreset" @change="selectPreset($event.target.value)">
+              <option v-for="(preset, id) in presets" :key="id" :value="id">{{ preset.name }}</option>
+              <option value="">Custom</option>
             </select>
           </div>
-
-          <div class="split-fields">
-            <div class="form-field">
-              <label for="swimTime">Swim</label>
-              <input
-                id="swimTime"
-                :value="nutritionTimeInputs.swim"
-                type="text"
-                placeholder="HH:MM:SS"
-                @focus="isEditingNutritionTime.swim = true"
-                @input="(event) => handleNutritionTimeInput('swim', event)"
-                @blur="() => finishNutritionTimeInput('swim')"
-                @keydown.enter="blurInput"
-              />
-            </div>
-            <div class="form-field">
-              <label for="bikeTime">Bike</label>
-              <input
-                id="bikeTime"
-                :value="nutritionTimeInputs.bike"
-                type="text"
-                placeholder="HH:MM:SS"
-                @focus="isEditingNutritionTime.bike = true"
-                @input="(event) => handleNutritionTimeInput('bike', event)"
-                @blur="() => finishNutritionTimeInput('bike')"
-                @keydown.enter="blurInput"
-              />
-            </div>
-            <div class="form-field">
-              <label for="runTime">Run</label>
-              <input
-                id="runTime"
-                :value="nutritionTimeInputs.run"
-                type="text"
-                placeholder="HH:MM:SS"
-                @focus="isEditingNutritionTime.run = true"
-                @input="(event) => handleNutritionTimeInput('run', event)"
-                @blur="() => finishNutritionTimeInput('run')"
-                @keydown.enter="blurInput"
-              />
+          <div class="form-field">
+            <label for="targetTime">Target Time (HH:MM:SS)</label>
+            <input id="targetTime" v-model="targetTimeInput" type="text" placeholder="HH:MM:SS"
+              @input="setTargetTime(targetTimeInput)" @blur="resetTarget" @keydown.enter="$event.target.blur()" />
+          </div>
+          <div class="distance-fields">
+            <div v-for="key in distanceKeys" :key="key" class="form-field">
+              <label :for="`distance-${key}`">{{ disciplineInfo[key].icon }} {{ disciplineInfo[key].label }} (km)</label>
+              <input :id="`distance-${key}`" type="number" min="0" max="1000000" step="any"
+                :value="config.distances[key]" :disabled="config.selectedPreset !== ''"
+                @input="setDistance(key, inputNumber($event))" @blur="$event.target.value = config.distances[key]" />
             </div>
           </div>
-
-          <div class="split-fields">
-            <div class="form-field">
-              <label for="bodyWeight">Body weight (kg)</label>
-              <input id="bodyWeight" v-model.number="nutrition.bodyWeight" type="number" min="1" step="1" />
-            </div>
-            <div class="form-field">
-              <label for="carbMode">Carbs per hour</label>
-              <select id="carbMode" v-model="nutrition.carbMode">
-                <option value="default">Default target</option>
-                <option value="custom">Custom target</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="customCarbs">Target carbs (g/h)</label>
-              <input
-                id="customCarbs"
-                v-model.number="nutrition.customCarbsPerHour"
-                type="number"
-                min="0"
-                step="5"
-                :disabled="nutrition.carbMode === 'default'"
-              />
-            </div>
-          </div>
+          <p class="hint">{{ config.selectedPreset === '' ? 'Custom: Distanzen frei bearbeiten (km).' : 'Für eigene Distanzen Custom auswählen. Zeiten sind editierbare Planwerte.' }}</p>
         </div>
 
-        <div class="nutrition-summary">
-          <div class="summary-metric">
-            <span class="summary-label">Race Time</span>
-            <strong>{{ nutritionTotalTimeFormatted }}</strong>
-          </div>
-          <div class="summary-metric">
-            <span class="summary-label">Carb Target</span>
-            <strong>{{ nutritionCarbsPerHour }} g/h</strong>
-          </div>
-          <div class="summary-metric">
-            <span class="summary-label">Total Carbs</span>
-            <strong>{{ nutritionTotalCarbs }} g</strong>
-          </div>
-          <div class="summary-metric">
-            <span class="summary-label">Carbs / kg / h</span>
-            <strong>{{ nutritionCarbsPerKgHour }} g</strong>
-          </div>
+        <div class="disciplines-section">
+          <DisciplineSlider v-for="key in activeKeys" :key="`${state.selectedSport}-${key}`"
+            :discipline="key" :label="disciplineInfo[key].label" :icon="disciplineInfo[key].icon"
+            :model-value="config.disciplines[key]" :max-value="isTriathlon ? config.targetTimeSeconds : Math.min(359999, Math.max(3600, totalSeconds * 2))"
+            :total-time="totalSeconds" :is-locked="isTriathlon && config.lockedDisciplines[key]"
+            :show-distribution="isTriathlon" :pace-value="paceValue(key)" :pace-unit="disciplineInfo[key].unit || ''"
+            @update:model-value="updateDiscipline(key, $event)" @update:pace-info="updatePace(key, $event)" @toggle-lock="toggleLock" />
         </div>
+        <div class="summary-section valid">
+          <div><span class="summary-label">Total Time</span><strong id="pace-total-duration">{{ secondsToTime(totalSeconds) }}</strong></div>
+          <div><span class="summary-label">Target Time</span><strong>{{ secondsToTime(config.targetTimeSeconds) }}</strong></div>
+          <span class="match-status">✓ Times match</span>
+        </div>
+        <p class="hint card-note">{{ isTriathlon ? 'Änderungen verteilen die verbleibende Zeit proportional. Gesperrte Zeiten bleiben bei anderen Änderungen unverändert. Direkte Eingaben bearbeiten auch gesperrte Zeiten.' : 'Zeit und Pace bearbeiten die gesamte Renndauer – ohne Wechselzeiten oder versteckte Disziplinen.' }}</p>
       </section>
 
-      <section class="products-section">
-        <div class="section-heading">
-          <h2>Products</h2>
-          <button type="button" class="secondary-button" @click="addNutritionProduct">Add product</button>
+      <section class="app-main nutrition-card" aria-labelledby="nutrition-heading">
+        <h2 id="nutrition-heading">Nutrition</h2>
+        <p class="hint">Schätzung aus der aktuellen Renndauer{{ isTriathlon ? ' inklusive Wechselzeiten' : '' }}. Editierbare Planwerte, keine individuelle Ernährungsempfehlung.</p>
+        <div class="nutrition-summary" aria-live="polite" aria-atomic="true">
+          <div class="summary-metric"><span class="summary-label">Race Time</span><strong id="nutrition-total-duration">{{ secondsToTime(summary.totalSeconds) }}</strong></div>
+          <div class="summary-metric"><span class="summary-label">Carb Target</span><strong id="nutrition-carbs-per-hour">{{ summary.carbsPerHour }} g/h</strong></div>
+          <div class="summary-metric"><span class="summary-label">Total Carbs · Schätzung</span><strong id="nutrition-total-carbs">{{ summary.totalCarbs }} g</strong></div>
+          <div class="summary-metric"><span class="summary-label">Carbs / kg / h</span><strong>{{ summary.carbsPerKgHour }} g</strong></div>
         </div>
-
-        <div class="products-table">
-          <div class="products-row products-header">
-            <span>Product</span>
-            <span>Carbs</span>
-            <span>Sodium</span>
-            <span>Servings</span>
-            <span>Total</span>
-            <span></span>
+        <div class="split-fields">
+          <div class="form-field">
+            <label for="bodyWeight">Body weight (kg)</label>
+            <input id="bodyWeight" type="number" min="1" max="1000000" step="any" :value="state.nutrition.bodyWeight"
+              @input="setNutritionNumber('bodyWeight', $event, 1)" @blur="$event.target.value = state.nutrition.bodyWeight" />
           </div>
-
-          <div v-for="product in nutrition.products" :key="product.id" class="products-row">
-            <input v-model="product.name" type="text" aria-label="Product name" />
-            <input v-model.number="product.carbs" type="number" min="0" step="1" aria-label="Carbs per serving" />
-            <input v-model.number="product.sodium" type="number" min="0" step="10" aria-label="Sodium per serving" />
-            <input v-model.number="product.servings" type="number" min="0" step="0.5" aria-label="Servings" />
-            <span class="product-total">
-              {{ Math.round(product.carbs * product.servings) }} g / {{ Math.round(product.sodium * product.servings) }} mg
-            </span>
-            <button
-              type="button"
-              class="icon-button"
-              aria-label="Remove product"
-              :disabled="nutrition.products.length === 1"
-              @click="removeNutritionProduct(product.id)"
-            >
-              ×
-            </button>
+          <div class="form-field">
+            <label for="carbMode">Carbs per hour</label>
+            <select id="carbMode" v-model="state.nutrition.carbMode"><option value="default">Existing default target</option><option value="custom">Custom target</option></select>
           </div>
         </div>
-
-        <div class="nutrition-totals">
-          <div>
-            <span class="summary-label">Planned Carbs</span>
-            <strong>{{ nutritionPlannedCarbs }} g</strong>
+        <div class="split-fields">
+          <div v-if="state.nutrition.carbMode === 'default'" class="form-field">
+            <label for="raceType">Target template (g/h)</label>
+            <select id="raceType" v-model="state.nutrition.raceType">
+              <option value="sprint">Sprint · 45</option><option value="olympic">Olympic · 60</option>
+              <option value="halfIronman">70.3 · 75</option><option value="ironman">Ironman · 90</option>
+            </select>
           </div>
-          <div>
-            <span class="summary-label">Carb Gap</span>
-            <strong :class="{ warning: nutritionCarbGap > 0 }">{{ nutritionCarbGap }} g</strong>
-          </div>
-          <div>
-            <span class="summary-label">Planned Sodium</span>
-            <strong>{{ nutritionPlannedSodium }} mg</strong>
+          <div class="form-field">
+            <label for="customCarbs">Target carbs (g/h)</label>
+            <input id="customCarbs" type="number" min="0" max="1000000" step="any" :value="state.nutrition.customCarbsPerHour"
+              :disabled="state.nutrition.carbMode !== 'custom'" @input="setNutritionNumber('customCarbsPerHour', $event)"
+              @blur="$event.target.value = state.nutrition.customCarbsPerHour" />
           </div>
         </div>
+        <p class="hint">Vorhandene Zielvorlagen bleiben wählbar und ändern keine Rennzeiten. Eigene Werte unter Custom target eintragen.</p>
+
+        <section class="products-section" aria-labelledby="products-heading">
+          <div class="section-heading"><h3 id="products-heading">Products</h3><button type="button" class="secondary-button" @click="addProduct">Add product</button></div>
+          <div class="products-table">
+            <div v-for="product in state.nutrition.products" :key="product.id" class="product-row">
+              <label class="product-name">Product<input v-model="product.name" type="text" aria-label="Product name" /></label>
+              <label>Carbs (g)<input type="number" min="0" max="1000000" step="any" :value="product.carbs" aria-label="Carbs per serving"
+                @input="setProductNumber(product, 'carbs', $event)" @blur="$event.target.value = product.carbs" /></label>
+              <label>Sodium (mg)<input type="number" min="0" max="1000000" step="any" :value="product.sodium" aria-label="Sodium per serving"
+                @input="setProductNumber(product, 'sodium', $event)" @blur="$event.target.value = product.sodium" /></label>
+              <label>Servings<input type="number" min="0" max="1000000" step="any" :value="product.servings" aria-label="Servings"
+                @input="setProductNumber(product, 'servings', $event)" @blur="$event.target.value = product.servings" /></label>
+              <span class="product-total">{{ Math.round(product.carbs * product.servings) }} g / {{ Math.round(product.sodium * product.servings) }} mg</span>
+              <button type="button" class="icon-button" aria-label="Remove product" :disabled="state.nutrition.products.length === 1" @click="removeProduct(product.id)">×</button>
+            </div>
+          </div>
+          <div class="nutrition-totals">
+            <div><span class="summary-label">Planned Carbs</span><strong>{{ summary.plannedCarbs }} g</strong></div>
+            <div><span class="summary-label">Carb Gap</span><strong :class="{ warning: summary.carbGap > 0 }">{{ summary.carbGap }} g</strong></div>
+            <div><span class="summary-label">Planned Sodium</span><strong>{{ summary.plannedSodium }} mg</strong></div>
+          </div>
+        </section>
       </section>
     </main>
-
-    <footer class="app-footer">
-      <p>Adjust any discipline slider to automatically redistribute time proportionally</p>
-    </footer>
+    <footer class="app-footer">Race Planner · Pace &amp; Nutrition bleiben gemeinsam im Blick.</footer>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { computed, ref, watch, onUnmounted, nextTick } from 'vue';
 import DisciplineSlider from './components/DisciplineSlider.vue';
-import { 
-  timeToSeconds, 
-  secondsToTime, 
-  isValidTimeFormat,
-  calculateSwimPace,
-  calculateBikeSpeed,
-  calculateRunPace
-} from './utils/timeUtils';
-import { 
-  getPreset, 
-  getPresetOptions, 
-  calculateInitialTimes 
-} from './composables/useTriathlonPresets';
-import { createPersistentState } from './utils/persistence';
-
-const presetOptions = getPresetOptions();
-const nutritionRaceTypes = [
-  { value: 'sprint', label: 'Sprint', defaultCarbsPerHour: 45 },
-  { value: 'olympic', label: 'Olympic', defaultCarbsPerHour: 60 },
-  { value: 'halfIronman', label: '70.3', defaultCarbsPerHour: 75 },
-  { value: 'ironman', label: 'Ironman', defaultCarbsPerHour: 90 }
-];
-const defaultPreset = getPreset('olympic');
-const defaultTargetTimeSeconds = timeToSeconds(defaultPreset.targetTime);
-const defaultDisciplines = calculateInitialTimes(defaultTargetTimeSeconds, defaultPreset.distribution);
-const defaultNutrition = {
-  raceType: 'olympic',
-  swimTime: secondsToTime(defaultDisciplines.swim),
-  bikeTime: secondsToTime(defaultDisciplines.bike),
-  runTime: secondsToTime(defaultDisciplines.run),
-  bodyWeight: 75,
-  carbMode: 'default',
-  customCarbsPerHour: 60,
-  products: [
-    { id: 1, name: 'Gel', carbs: 25, sodium: 50, servings: 4 },
-    { id: 2, name: 'Drink mix', carbs: 40, sodium: 500, servings: 2 },
-    { id: 3, name: 'Bar', carbs: 35, sodium: 120, servings: 1 }
-  ]
+import { createRacePlanner, SPORT_OPTIONS, RACE_PRESETS } from './composables/useRacePlanner.js';
+import { secondsToTime, calculateSwimPace, calculateBikeSpeed, calculateRunPace } from './utils/timeUtils.js';
+let storage = null;
+try { storage = typeof window === 'undefined' ? null : window.localStorage; } catch { /* Private browsing may deny storage access. */ }
+const planner = createRacePlanner(storage);
+const { state, config, activeKeys, totalSeconds, nutritionSummary: summary, selectSport, selectPreset,
+  setDistance, setTargetTime, updateDiscipline, updatePace, toggleLock, addProduct, removeProduct } = planner;
+onUnmounted(planner.stop);
+const isTriathlon = computed(() => state.selectedSport === 'triathlon');
+const presets = computed(() => RACE_PRESETS[state.selectedSport]);
+const distanceKeys = computed(() => Object.keys(config.value.distances));
+const targetTimeInput = ref(secondsToTime(config.value.targetTimeSeconds));
+const resetTarget = () => { targetTimeInput.value = secondsToTime(config.value.targetTimeSeconds); };
+watch(() => [state.selectedSport, config.value.targetTimeSeconds, config.value.selectedPreset], resetTarget);
+const disciplineInfo = {
+  swim: { label: 'Schwimmen', icon: '🏊‍♂️', unit: '/100m' },
+  t1: { label: 'Wechselzone 1', icon: '🔄' },
+  bike: { label: 'Radfahren', icon: '🚴‍♂️', unit: 'km/h' },
+  t2: { label: 'Wechselzone 2', icon: '🔄' },
+  run: { label: 'Laufen', icon: '🏃‍♂️', unit: 'min/km' }
 };
-const defaultAppState = {
-  activeView: 'pace',
-  selectedPreset: 'olympic',
-  targetTimeInput: defaultPreset.targetTime,
-  targetTimeSeconds: defaultTargetTimeSeconds,
-  disciplines: defaultDisciplines,
-  lockedDisciplines: {
-    swim: false,
-    t1: true,  // T1 locked by default
-    bike: false,
-    t2: true,  // T2 locked by default
-    run: false
-  },
-  nutrition: defaultNutrition
-};
-const browserStorage = typeof window === 'undefined' ? null : window.localStorage;
-const persistentState = createPersistentState(
-  browserStorage,
-  'triathlon-race-planner:v1',
-  defaultAppState
-);
-const initialState = persistentState.initialState;
-
-// State
-const activeView = ref(initialState.activeView);
-const selectedPreset = ref(initialState.selectedPreset);
-const targetTimeInput = ref(initialState.targetTimeInput);
-const targetTimeSeconds = ref(initialState.targetTimeSeconds);
-const currentPreset = ref(selectedPreset.value ? getPreset(selectedPreset.value) : null);
-
-const disciplines = ref({ ...initialState.disciplines });
-
-const lockedDisciplines = ref({ ...initialState.lockedDisciplines });
-
-let nextProductId = Math.max(0, ...initialState.nutrition.products.map(product => Number(product.id) || 0)) + 1;
-let isSyncingRaceTimes = false;
-
-const nutrition = ref({
-  ...initialState.nutrition,
-  products: initialState.nutrition.products.map(product => ({ ...product }))
-});
-
-const nutritionTimeInputs = ref({
-  swim: nutrition.value.swimTime,
-  bike: nutrition.value.bikeTime,
-  run: nutrition.value.runTime
-});
-
-const isEditingNutritionTime = ref({
-  swim: false,
-  bike: false,
-  run: false
-});
-
-// Computed properties
-const totalTimeFormatted = computed(() => {
-  const total = disciplines.value.swim + disciplines.value.t1 + 
-                disciplines.value.bike + disciplines.value.t2 + 
-                disciplines.value.run;
-  return secondsToTime(total);
-});
-
-const targetTimeFormatted = computed(() => {
-  return secondsToTime(targetTimeSeconds.value);
-});
-
-const isValidTotal = computed(() => {
-  const total = disciplines.value.swim + disciplines.value.t1 + 
-                disciplines.value.bike + disciplines.value.t2 + 
-                disciplines.value.run;
-  return Math.abs(total - targetTimeSeconds.value) < 2; // Allow 1 second tolerance
-});
-
-const swimPace = computed(() => {
-  if (!currentPreset.value) return '';
-  return calculateSwimPace(disciplines.value.swim, currentPreset.value.distances.swim * 1000);
-});
-
-const swimPaceValue = computed(() => {
-  return swimPace.value.replace(' /100m', '');
-});
-
-const bikeSpeed = computed(() => {
-  if (!currentPreset.value) return '';
-  return calculateBikeSpeed(disciplines.value.bike, currentPreset.value.distances.bike);
-});
-
-const bikeSpeedValue = computed(() => {
-  return bikeSpeed.value.replace(' km/h', '');
-});
-
-const runPace = computed(() => {
-  if (!currentPreset.value) return '';
-  return calculateRunPace(disciplines.value.run, currentPreset.value.distances.run);
-});
-
-const runPaceValue = computed(() => {
-  return runPace.value.replace(' /km', '');
-});
-
-const selectedNutritionRace = computed(() => {
-  return nutritionRaceTypes.find(race => race.value === nutrition.value.raceType) || nutritionRaceTypes[1];
-});
-
-const nutritionCarbsPerHour = computed(() => {
-  if (nutrition.value.carbMode === 'custom') {
-    return Math.max(0, Number(nutrition.value.customCarbsPerHour) || 0);
-  }
-
-  return selectedNutritionRace.value.defaultCarbsPerHour;
-});
-
-const nutritionTotalSeconds = computed(() => {
-  return timeToSeconds(nutrition.value.swimTime) +
-    timeToSeconds(nutrition.value.bikeTime) +
-    timeToSeconds(nutrition.value.runTime);
-});
-
-const nutritionTotalTimeFormatted = computed(() => {
-  return secondsToTime(nutritionTotalSeconds.value);
-});
-
-const nutritionTotalCarbs = computed(() => {
-  return Math.round((nutritionTotalSeconds.value / 3600) * nutritionCarbsPerHour.value);
-});
-
-const nutritionCarbsPerKgHour = computed(() => {
-  const weight = Math.max(1, Number(nutrition.value.bodyWeight) || 1);
-  return (nutritionCarbsPerHour.value / weight).toFixed(2);
-});
-
-const nutritionPlannedCarbs = computed(() => {
-  return Math.round(nutrition.value.products.reduce((sum, product) => {
-    return sum + ((Number(product.carbs) || 0) * (Number(product.servings) || 0));
-  }, 0));
-});
-
-const nutritionPlannedSodium = computed(() => {
-  return Math.round(nutrition.value.products.reduce((sum, product) => {
-    return sum + ((Number(product.sodium) || 0) * (Number(product.servings) || 0));
-  }, 0));
-});
-
-const nutritionCarbGap = computed(() => {
-  return Math.max(0, nutritionTotalCarbs.value - nutritionPlannedCarbs.value);
-});
-
-// Methods
-function loadPreset() {
-  if (!selectedPreset.value) {
-    currentPreset.value = null;
-    return;
-  }
-
-  const preset = getPreset(selectedPreset.value);
-  currentPreset.value = preset;
-  nutrition.value.raceType = selectedPreset.value;
-  nutrition.value.customCarbsPerHour = selectedNutritionRace.value.defaultCarbsPerHour;
-  targetTimeInput.value = preset.targetTime;
-  updateTargetTime();
+function paceValue(key) {
+  const seconds = config.value.disciplines[key];
+  const distance = config.value.distances[key];
+  if (key === 'swim') return calculateSwimPace(seconds, distance * 1000).replace(' /100m', '');
+  if (key === 'bike') return calculateBikeSpeed(seconds, distance).replace(' km/h', '');
+  if (key === 'run') return calculateRunPace(seconds, distance).replace(' /km', '');
+  return '';
 }
-
-function updateTargetTime() {
-  if (!isValidTimeFormat(targetTimeInput.value)) {
-    targetTimeInput.value = secondsToTime(targetTimeSeconds.value);
-    return;
-  }
-
-  const newTargetSeconds = timeToSeconds(targetTimeInput.value);
-  if (newTargetSeconds > 0) {
-    targetTimeSeconds.value = newTargetSeconds;
-    
-    // Recalculate all disciplines proportionally
-    const currentTotal = disciplines.value.swim + disciplines.value.t1 + 
-                        disciplines.value.bike + disciplines.value.t2 + 
-                        disciplines.value.run;
-    
-    if (currentTotal > 0) {
-      const ratio = newTargetSeconds / currentTotal;
-      disciplines.value.swim = Math.round(disciplines.value.swim * ratio);
-      disciplines.value.t1 = Math.round(disciplines.value.t1 * ratio);
-      disciplines.value.bike = Math.round(disciplines.value.bike * ratio);
-      disciplines.value.t2 = Math.round(disciplines.value.t2 * ratio);
-      disciplines.value.run = Math.round(disciplines.value.run * ratio);
-      
-      // Adjust for rounding errors
-      adjustForRoundingErrors();
-    } else if (currentPreset.value) {
-      // Initialize with preset distribution
-      const times = calculateInitialTimes(newTargetSeconds, currentPreset.value.distribution);
-      Object.assign(disciplines.value, times);
-    }
-  }
+function inputNumber(event) { return event.target.value.trim() === '' ? NaN : Number(event.target.value); }
+function setNutritionNumber(key, event, min = 0) {
+  const value = inputNumber(event);
+  if (Number.isFinite(value) && value >= min && value <= 1000000) state.nutrition[key] = value;
 }
-
-function handleTargetTimeInput() {
-  if (isValidTimeFormat(targetTimeInput.value)) {
-    updateTargetTime();
-  }
+function setProductNumber(product, key, event) {
+  const value = inputNumber(event);
+  if (Number.isFinite(value) && value >= 0 && value <= 1000000) product[key] = value;
 }
-
-function blurInput(event) {
-  event.currentTarget.blur();
+async function handleTabKey(event, sport) {
+  const index = SPORT_OPTIONS.findIndex(option => option.value === sport);
+  const targets = { ArrowRight: (index + 1) % 4, ArrowLeft: (index + 3) % 4, Home: 0, End: 3 };
+  if (!(event.key in targets)) return;
+  event.preventDefault();
+  const next = SPORT_OPTIONS[targets[event.key]].value;
+  selectSport(next);
+  await nextTick();
+  document.getElementById(`tab-${next}`)?.focus();
 }
-
-function normalizeTimeInputValue(value) {
-  const rawValue = String(value || '').trim();
-  if (!rawValue) return null;
-
-  const parts = rawValue.split(':');
-  if (parts.length < 2 || parts.length > 3) return null;
-  if (!parts.every(part => /^\d{1,2}$/.test(part))) return null;
-
-  const numericParts = parts.map(Number);
-  const secondsText = parts[parts.length - 1];
-  const seconds = secondsText.length === 1 ? Number(secondsText) * 10 : Number(secondsText);
-  if (seconds > 59) return null;
-
-  if (parts.length === 2) {
-    const [minutes] = numericParts;
-    if (minutes > 59) return null;
-    return secondsToTime((minutes * 60) + seconds);
-  }
-
-  const [hours, minutes] = numericParts;
-  if (minutes > 59) return null;
-  return secondsToTime((hours * 3600) + (minutes * 60) + seconds);
-}
-
-function nutritionKeyToTimeField(key) {
-  return `${key}Time`;
-}
-
-function handleNutritionTimeInput(key, event) {
-  const value = event.target.value;
-  nutritionTimeInputs.value[key] = value;
-
-  const normalizedValue = normalizeTimeInputValue(value);
-  if (normalizedValue !== null) {
-    nutrition.value[nutritionKeyToTimeField(key)] = normalizedValue;
-  }
-}
-
-function finishNutritionTimeInput(key) {
-  isEditingNutritionTime.value[key] = false;
-
-  const normalizedValue = normalizeTimeInputValue(nutritionTimeInputs.value[key]);
-  const timeField = nutritionKeyToTimeField(key);
-  nutritionTimeInputs.value[key] = normalizedValue ?? nutrition.value[timeField];
-
-  if (normalizedValue !== null) {
-    nutrition.value[timeField] = normalizedValue;
-  }
-}
-
-function paceTextToSeconds(value) {
-  if (!value || typeof value !== 'string') return null;
-
-  const match = value.trim().match(/^(\d{1,2}):([0-5]\d)/);
-  if (!match) return null;
-
-  return Number(match[1]) * 60 + Number(match[2]);
-}
-
-function updatePaceValue(disciplineKey, value) {
-  if (!currentPreset.value) return;
-
-  if (disciplineKey === 'swim') {
-    const secondsPer100m = paceTextToSeconds(value);
-    if (secondsPer100m === null) return;
-
-    const distanceM = currentPreset.value.distances.swim * 1000;
-    updateDiscipline('swim', Math.round((secondsPer100m * distanceM) / 100));
-    return;
-  }
-
-  if (disciplineKey === 'run') {
-    const secondsPerKm = paceTextToSeconds(value);
-    if (secondsPerKm === null) return;
-
-    updateDiscipline('run', Math.round(secondsPerKm * currentPreset.value.distances.run));
-    return;
-  }
-
-  if (disciplineKey === 'bike') {
-    const speed = Number.parseFloat(String(value).replace(',', '.'));
-    if (!Number.isFinite(speed) || speed <= 0) return;
-
-    updateDiscipline('bike', Math.round((currentPreset.value.distances.bike / speed) * 3600));
-  }
-}
-
-function updateDiscipline(disciplineKey, newValue) {
-  const oldValue = disciplines.value[disciplineKey];
-  const delta = newValue - oldValue;
-  
-  if (delta === 0) return;
-  
-  // Update the changed discipline
-  disciplines.value[disciplineKey] = newValue;
-  
-  // Get all disciplines that are NOT locked and NOT the one being changed
-  const adjustableDisciplines = Object.keys(disciplines.value).filter(
-    key => key !== disciplineKey && !lockedDisciplines.value[key]
-  );
-  
-  // If no adjustable disciplines, can't redistribute
-  if (adjustableDisciplines.length === 0) {
-    disciplines.value[disciplineKey] = oldValue; // Revert change
-    return;
-  }
-  
-  // Calculate total of adjustable disciplines
-  const adjustableTotal = adjustableDisciplines.reduce((sum, key) => sum + disciplines.value[key], 0);
-  
-  if (adjustableTotal === 0) {
-    // If other adjustable disciplines are 0, distribute evenly
-    const lockedTotal = Object.keys(disciplines.value)
-      .filter(key => key !== disciplineKey && lockedDisciplines.value[key])
-      .reduce((sum, key) => sum + disciplines.value[key], 0);
-    const remaining = targetTimeSeconds.value - newValue - lockedTotal;
-    const perDiscipline = Math.floor(remaining / adjustableDisciplines.length);
-    adjustableDisciplines.forEach(key => {
-      disciplines.value[key] = perDiscipline;
-    });
-  } else {
-    // Redistribute proportionally based on current values
-    adjustableDisciplines.forEach(key => {
-      const proportion = disciplines.value[key] / adjustableTotal;
-      const adjustment = Math.round(-delta * proportion);
-      disciplines.value[key] = Math.max(0, disciplines.value[key] + adjustment);
-    });
-  }
-  
-  // Adjust for rounding errors to ensure total equals target
-  adjustForRoundingErrors();
-}
-
-function toggleLock(disciplineKey) {
-  lockedDisciplines.value[disciplineKey] = !lockedDisciplines.value[disciplineKey];
-}
-
-function loadNutritionRaceDefaults() {
-  const preset = getPreset(nutrition.value.raceType);
-  const times = calculateInitialTimes(timeToSeconds(preset.targetTime), preset.distribution);
-
-  isSyncingRaceTimes = true;
-  selectedPreset.value = nutrition.value.raceType;
-  currentPreset.value = preset;
-  targetTimeInput.value = preset.targetTime;
-  targetTimeSeconds.value = timeToSeconds(preset.targetTime);
-  Object.assign(disciplines.value, times);
-
-  nutrition.value.swimTime = secondsToTime(times.swim);
-  nutrition.value.bikeTime = secondsToTime(times.bike);
-  nutrition.value.runTime = secondsToTime(times.run);
-  nutrition.value.customCarbsPerHour = selectedNutritionRace.value.defaultCarbsPerHour;
-  isSyncingRaceTimes = false;
-}
-
-function addNutritionProduct() {
-  nutrition.value.products.push({
-    id: nextProductId,
-    name: 'Product',
-    carbs: 30,
-    sodium: 100,
-    servings: 1
-  });
-  nextProductId += 1;
-}
-
-function removeNutritionProduct(productId) {
-  if (nutrition.value.products.length === 1) return;
-  nutrition.value.products = nutrition.value.products.filter(product => product.id !== productId);
-}
-
-function adjustForRoundingErrors() {
-  const total = disciplines.value.swim + disciplines.value.t1 +
-                disciplines.value.bike + disciplines.value.t2 +
-                disciplines.value.run;
-  const diff = targetTimeSeconds.value - total;
-  
-  if (diff !== 0) {
-    // Add/subtract the difference to the largest unlocked discipline
-    const adjustableDisciplines = Object.keys(disciplines.value).filter(
-      key => !lockedDisciplines.value[key]
-    );
-    
-    if (adjustableDisciplines.length > 0) {
-      const largest = adjustableDisciplines.reduce((a, b) =>
-        disciplines.value[a] > disciplines.value[b] ? a : b
-      );
-      disciplines.value[largest] = Math.max(0, disciplines.value[largest] + diff);
-    }
-  }
-}
-
-watch(
-  () => [disciplines.value.swim, disciplines.value.bike, disciplines.value.run],
-  ([swim, bike, run]) => {
-    if (isSyncingRaceTimes) return;
-
-    isSyncingRaceTimes = true;
-    nutrition.value.swimTime = secondsToTime(swim);
-    nutrition.value.bikeTime = secondsToTime(bike);
-    nutrition.value.runTime = secondsToTime(run);
-    isSyncingRaceTimes = false;
-  }
-);
-
-watch(
-  () => [nutrition.value.swimTime, nutrition.value.bikeTime, nutrition.value.runTime],
-  ([swimTime, bikeTime, runTime]) => {
-    const times = { swim: swimTime, bike: bikeTime, run: runTime };
-    Object.entries(times).forEach(([key, value]) => {
-      if (!isEditingNutritionTime.value[key]) {
-        nutritionTimeInputs.value[key] = value;
-      }
-    });
-
-    if (isSyncingRaceTimes) return;
-    if (![swimTime, bikeTime, runTime].every(isValidTimeFormat)) return;
-
-    isSyncingRaceTimes = true;
-    disciplines.value.swim = timeToSeconds(swimTime);
-    disciplines.value.bike = timeToSeconds(bikeTime);
-    disciplines.value.run = timeToSeconds(runTime);
-    targetTimeSeconds.value = disciplines.value.swim +
-      disciplines.value.t1 +
-      disciplines.value.bike +
-      disciplines.value.t2 +
-      disciplines.value.run;
-    targetTimeInput.value = secondsToTime(targetTimeSeconds.value);
-    isSyncingRaceTimes = false;
-  }
-);
-
-watch(
-  () => ({
-    activeView: activeView.value,
-    selectedPreset: selectedPreset.value,
-    targetTimeInput: targetTimeInput.value,
-    targetTimeSeconds: targetTimeSeconds.value,
-    disciplines: disciplines.value,
-    lockedDisciplines: lockedDisciplines.value,
-    nutrition: nutrition.value
-  }),
-  (state) => persistentState.save(state),
-  { deep: true }
-);
 </script>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  min-height: 100vh;
-}
-
-#app {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.app-nav {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-  padding: 6px;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 12px;
-}
-
-.nav-button {
-  flex: 1;
-  min-height: 44px;
-  border: 0;
-  border-radius: 8px;
-  color: white;
-  background: transparent;
-  font-size: 15px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.nav-button.active {
-  color: #2c3e50;
-  background: white;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
-}
-
-.app-header {
-  text-align: center;
-  color: white;
-  margin-bottom: 30px;
-}
-
-.app-header h1 {
-  font-size: 32px;
-  margin-bottom: 8px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.subtitle {
-  font-size: 16px;
-  opacity: 0.9;
-}
-
-.app-main {
-  background: white;
-  border-radius: 16px;
-  padding: 30px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-}
-
-.controls-section {
-  margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 2px solid #f0f0f0;
-}
-
-.preset-selector,
-.target-time-input {
-  margin-bottom: 16px;
-}
-
-.preset-selector label,
-.target-time-input label,
-.form-field label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #2c3e50;
-}
-
-.preset-selector select,
-.target-time-input input,
-.form-field select,
-.form-field input,
-.products-row input {
-  width: 100%;
-  padding: 12px;
-  font-size: 16px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  transition: border-color 0.3s;
-}
-
-.preset-selector select:focus,
-.target-time-input input:focus,
-.form-field select:focus,
-.form-field input:focus,
-.products-row input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.form-field input:disabled {
-  color: #888;
-  background: #f5f5f5;
-}
-
-.distance-info {
-  display: flex;
-  gap: 20px;
-  margin-top: 16px;
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 8px;
-}
-
-.distance-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: #666;
-}
-
-.distance-icon {
-  font-size: 18px;
-}
-
-.disciplines-section {
-  margin-bottom: 30px;
-}
-
-.summary-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 12px;
-  border: 2px solid #e0e0e0;
-  transition: all 0.3s;
-}
-
-.summary-section.valid {
-  background: #e8f5e9;
-  border-color: #4caf50;
-}
-
-.summary-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.summary-label {
-  font-size: 12px;
-  color: #666;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.summary-value {
-  font-family: 'Courier New', monospace;
-  font-size: 20px;
-  font-weight: 700;
-  color: #2c3e50;
-}
-
-.summary-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: #666;
-}
-
-.status-icon {
-  font-size: 24px;
-}
-
-.summary-section.valid .status-icon {
-  color: #4caf50;
-}
-
-.nutrition-main {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.nutrition-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 24px;
-}
-
-.nutrition-panel h2,
-.section-heading h2 {
-  margin-bottom: 16px;
-  color: #2c3e50;
-  font-size: 22px;
-}
-
-.split-fields {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.form-field {
-  margin-bottom: 16px;
-}
-
-.nutrition-summary,
-.nutrition-totals {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-}
-
-.summary-metric,
-.nutrition-totals > div {
-  padding: 16px;
-  border: 1px solid #e8ebef;
-  border-radius: 8px;
-  background: #f8f9fa;
-}
-
-.summary-metric strong,
-.nutrition-totals strong {
-  display: block;
-  margin-top: 4px;
-  color: #2c3e50;
-  font-size: 22px;
-}
-
-.section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.secondary-button,
-.icon-button {
-  border: 0;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.secondary-button {
-  padding: 10px 14px;
-  color: white;
-  background: #667eea;
-}
-
-.products-table {
-  display: grid;
-  gap: 8px;
-}
-
-.products-row {
-  display: grid;
-  grid-template-columns: minmax(150px, 1.2fr) minmax(86px, 0.7fr) minmax(98px, 0.8fr) minmax(94px, 0.7fr) minmax(150px, 1fr) 42px;
-  gap: 8px;
-  align-items: center;
-}
-
-.products-header {
-  color: #666;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.product-total {
-  font-weight: 700;
-  color: #2c3e50;
-}
-
-.icon-button {
-  width: 42px;
-  height: 42px;
-  color: #c62828;
-  background: #ffebee;
-  font-size: 24px;
-  line-height: 1;
-}
-
-.icon-button:disabled {
-  color: #aaa;
-  background: #f5f5f5;
-  cursor: not-allowed;
-}
-
-.nutrition-totals {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.warning {
-  color: #c62828 !important;
-}
-
-.app-footer {
-  text-align: center;
-  color: white;
-  margin-top: 20px;
-  font-size: 14px;
-  opacity: 0.9;
-}
-
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+#app { max-width: 1540px; margin: 0 auto; padding: 24px; }
+.app-header { text-align: center; color: white; margin-bottom: 24px; }
+.app-header h1 { font-size: 32px; margin-bottom: 8px; text-shadow: 2px 2px 4px #0003; }
+.subtitle { font-size: 16px; opacity: .9; }
+.app-nav { display: flex; gap: 8px; margin-bottom: 24px; padding: 6px; background: #ffffff2e; border: 1px solid #ffffff47; border-radius: 12px; }
+.nav-button { flex: 1; min-height: 44px; border: 0; border-radius: 8px; color: white; background: transparent; font-size: 15px; font-weight: 700; cursor: pointer; }
+.nav-button.active { color: #2c3e50; background: white; box-shadow: 0 4px 14px #0002; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #354cc4; outline-offset: 3px; }
+.nav-button:focus-visible { outline-color: white; }
+.planner-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.app-main { min-width: 0; background: white; border-radius: 16px; padding: 28px; box-shadow: 0 10px 40px #0003; }
+h2 { margin-bottom: 20px; color: #2c3e50; font-size: 26px; }
+h3 { color: #2c3e50; font-size: 20px; }
+.controls-section { margin-bottom: 24px; padding-bottom: 20px; border-bottom: 2px solid #f0f0f0; }
+.form-field { margin-bottom: 16px; min-width: 0; }
+.form-field label { display: block; font-weight: 600; margin-bottom: 8px; color: #2c3e50; }
+.form-field input, .form-field select, .product-row input { width: 100%; min-width: 0; padding: 11px; font-size: 16px; color: #2c3e50; background: white; border: 2px solid #e0e0e0; border-radius: 8px; }
+.form-field input:focus, .form-field select:focus, .product-row input:focus { border-color: #667eea; }
+.form-field input:disabled { background: #f5f5f5; color: #666; opacity: 1; }
+.distance-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 12px; }
+.hint { color: #626b77; font-size: 13px; line-height: 1.6; }
+.card-note { margin-top: 16px; }
+.summary-section { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 18px; background: #e8f5e9; border-radius: 12px; border: 2px solid #4caf50; }
+.summary-label { display: block; font-size: 11px; color: #626b77; text-transform: uppercase; font-weight: 600; }
+.summary-section strong { display: block; color: #2c3e50; font: bold 20px 'Courier New', monospace; margin-top: 4px; }
+.match-status { color: #286d2b; font-size: 13px; font-weight: 600; }
+.nutrition-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.summary-metric, .nutrition-totals > div { padding: 16px; border: 1px solid #e8ebef; border-radius: 8px; background: #f8f9fa; }
+.summary-metric strong, .nutrition-totals strong { display: block; margin-top: 4px; color: #2c3e50; font-size: 22px; overflow-wrap: anywhere; }
+.split-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.products-section { margin-top: 28px; padding-top: 20px; border-top: 2px solid #f0f0f0; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.secondary-button, .icon-button { border: 0; border-radius: 8px; font-weight: 700; cursor: pointer; min-height: 44px; }
+.secondary-button { padding: 10px 14px; color: white; background: #5266c9; }
+.products-table { display: grid; gap: 12px; }
+.product-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 42px; gap: 8px; align-items: end; padding: 14px; background: #f8f9fa; border: 1px solid #e8ebef; border-radius: 10px; }
+.product-row label { font-size: 12px; color: #626b77; font-weight: 600; }
+.product-row input { padding: 8px; margin-top: 4px; }
+.product-name { grid-column: 1 / -1; }
+.product-total { grid-column: 1 / 4; font-size: 13px; font-weight: 700; color: #2c3e50; align-self: center; }
+.icon-button { grid-column: 4; grid-row: 2 / 4; width: 42px; color: #c62828; background: #ffebee; font-size: 24px; }
+.icon-button:disabled { color: #888; background: #eee; cursor: not-allowed; }
+.nutrition-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.nutrition-totals > div { padding: 12px; }
+.nutrition-totals strong { font-size: 18px; }
+.warning { color: #c62828 !important; }
+.app-footer { text-align: center; color: white; margin-top: 24px; font-size: 14px; opacity: .9; }
+@media (max-width: 1050px) { .planner-grid { grid-template-columns: 1fr; } #app { max-width: 800px; } }
 @media (max-width: 600px) {
-  #app {
-    padding: 10px;
-  }
-
-  .app-header h1 {
-    font-size: 24px;
-  }
-
-  .app-main {
-    padding: 20px;
-  }
-
-  .distance-info {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .summary-section {
-    flex-direction: column;
-    gap: 16px;
-    text-align: center;
-  }
-
-  .nutrition-grid,
-  .split-fields,
-  .nutrition-totals {
-    grid-template-columns: 1fr;
-  }
-
-  .section-heading {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .products-row {
-    grid-template-columns: 1fr 1fr;
-    padding: 12px 0;
-    border-bottom: 1px solid #f0f0f0;
-  }
-
-  .products-header {
-    display: none;
-  }
-
-  .product-total {
-    grid-column: 1 / -1;
-  }
+  #app { padding: 12px; }
+  .app-header h1 { font-size: 24px; }
+  .app-main { padding: 18px; }
+  .app-nav { gap: 2px; padding: 4px; }
+  .nav-button { font-size: 13px; }
+  .split-fields { grid-template-columns: 1fr; gap: 0; }
+  .nutrition-totals { grid-template-columns: 1fr; }
+  .summary-section { justify-content: center; text-align: center; }
 }
 </style>
